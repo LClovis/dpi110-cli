@@ -28,7 +28,7 @@ sudo apt update && sudo apt install python3
 ### 1. Installation (`--install`)
  
 ```bash
-mkdir -p ~/dpi110-cli && curl -fsSL https://github.com/LClovis/dpi110-cli.tar.gz | tar -xz -C ~/dpi110-cli --strip-components=1 && cd ~/dpi110-cli && sudo python3 dpi110-cli.py --install
+mkdir -p ~/dpi110-cli && curl -sL https://github.com/LClovis/dpi110-cli/archive/main.tar.gz | tar -xz -C ~/dpi110-cli --strip-components=1 && cd ~/dpi110-cli && sudo python3 dpi110-cli.py --install
 ```
 
 ### 2. Background Daemon (`--daemon`)
