@@ -1,0 +1,30 @@
+{
+    "logger_settings": {
+        "interval_s": 1.0,
+        "trip_set": 0.0,
+        "trip_reset": 0.0,
+        "max_samples": 1000,
+        "log_mode": 1,
+        "pressure_measurement": 1,
+        "temperature_measurement": 1,
+        "pressure_unit": 0,
+        "temperature_unit": 0
+    },
+    "data_log_identity": {
+        "log_index": 1,
+        "technician": "TECNICO C.",
+        "tag": "Hello Log"
+    },
+    "leak_test_settings": {
+        "run_time_in_s": 5,
+        "pressure_unit": 0,
+        "time_unit": 1,
+        "leak_rate_precision": 2,
+        "max_leak_rate": 1.0
+    },
+    "leak_test_identity": {
+        "log_index": 1,
+        "technician": "TECNICO C.",
+        "tag": "Hello Log"
+    }
+}
