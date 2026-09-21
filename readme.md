@@ -27,13 +27,13 @@ sudo apt update && sudo apt install python3
 
 ### 1. Installation (`--install`)
 
-#### 1. Linux
+#### 1.1 Linux
  
 ```bash
 mkdir -p ~/dpi110-cli && curl -sL https://github.com/LClovis/dpi110-cli/archive/main.tar.gz | tar -xz -C ~/dpi110-cli --strip-components=1 && cd ~/dpi110-cli && sudo python3 dpi110-cli.py --install
 ```
 
-#### 1. Windows
+#### 1.2 Windows
 
 ```bash
 mkdir -Force $HOME\dpi110-cli; curl.exe -fL "https://github.com/LClovis/dpi110-cli/archive/main.tar.gz" -o $HOME\dpi110-cli\m.tgz; tar.exe -xzf $HOME\dpi110-cli\m.tgz -C $HOME\dpi110-cli --strip-components=1; Remove-Item $HOME\dpi110-cli\m.tgz; cd $HOME\dpi110-cli
