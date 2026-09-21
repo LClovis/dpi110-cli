@@ -60,7 +60,7 @@ DEFAULT_CONFIG = {
         "pressure_unit": 0,
         "temperature_unit": 0,
     },
-    "data_log_identity": {"log_index": 1, "technician": "", "tag": ""},
+    "data_log_identity": {"log_index": [1], "technician": [""], "tag": [""]},
     "leak_test_settings": {
         "run_time_in_s": 60,
         "pressure_unit": 0,
@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
         "leak_rate_precision": 2,
         "max_leak_rate": 1.0,
     },
-    "leak_test_identity": {"log_index": 1, "technician": "", "tag": ""},
+    "leak_test_identity": {"log_index": [1], "technician": [""], "tag": [""]},
 }
 
 # ==========================================
@@ -972,6 +972,26 @@ def load_config(path=CONFIG_PATH):
     merged = {**DEFAULT_CONFIG, **loaded}
     return loaded, merged  # `loaded` non-None = "file changed, push to device"
 
+def resolve_enum(enum_cls, val):
+    """Safely resolves a string or int into the hardware's expected integer."""
+    if isinstance(val, int):
+        return val
+        
+    if isinstance(val, str):
+        # 1. Check if it matches the class attribute name exactly (e.g., "TripHigh")
+        if val in enum_cls.__members__:
+            return enum_cls[val].value
+            
+        # 2. Check if it matches the custom symbol (e.g., "bar", "°C")
+        for member in enum_cls:
+            if hasattr(member, 'symbol') and member.symbol == val:
+                return member.value
+                
+        # 3. Fallback: Try casting a string number ("1") to int
+        if val.isdigit():
+            return int(val)
+            
+    raise ValueError(f"Invalid configuration value '{val}' for {enum_cls.__name__}")
 
 def pack_indexed_string(log_index, text, length):
     """1-byte index + fixed-length null-terminated string field."""
@@ -980,22 +1000,20 @@ def pack_indexed_string(log_index, text, length):
 
 
 def pack_log_technician(cfg):
-    return pack_indexed_string(cfg["log_index"], cfg["technician"], 16)
-
+    return pack_identity_field(cfg, "technician")
 
 def pack_log_tag(cfg):
-    return pack_indexed_string(cfg["log_index"], cfg["tag"], 16)
-
+    return pack_identity_field(cfg, "tag")
 
 def pack_leak_test_log_technician(cfg):
-    return pack_indexed_string(cfg["log_index"], cfg["technician"], 16)
-
+    return pack_identity_field(cfg, "technician")
 
 def pack_leak_test_log_tag(cfg):
-    return pack_indexed_string(cfg["log_index"], cfg["tag"], 16)
+    return pack_identity_field(cfg, "tag")
 
 
 DATALOG_SETTINGS_FMT = "<3fi5B3x"
+
 
 
 def pack_logger_settings(cfg):
@@ -1005,11 +1023,11 @@ def pack_logger_settings(cfg):
         float(cfg["trip_set"]),
         float(cfg["trip_reset"]),
         int(cfg["max_samples"]),
-        int(cfg["log_mode"]),
-        int(cfg["pressure_measurement"]),
-        int(cfg["temperature_measurement"]),
-        int(cfg["pressure_unit"]),
-        int(cfg["temperature_unit"]),
+        resolve_enum(LogMode, cfg["log_mode"]),
+        resolve_enum(LogMeasurement, cfg["pressure_measurement"]),
+        resolve_enum(LogMeasurement, cfg["temperature_measurement"]),
+        resolve_enum(PressureUnit, cfg["pressure_unit"]),
+        resolve_enum(TemperatureUnit, cfg["temperature_unit"]),
     )
 
 
@@ -1021,10 +1039,11 @@ def pack_leak_test_settings(cfg):
     return struct.pack(
         LEAK_SETTINGS_FMT,
         int(cfg["run_time_in_s"]),
-        int(cfg["pressure_unit"]),
-        int(cfg["time_unit"]),
-        int(cfg["leak_rate_precision"]),
+        resolve_enum(PressureUnit, cfg["pressure_unit"]),
+        resolve_enum(TimeUnit, cfg["time_unit"]),
+        resolve_enum(SensorAccuracyClass, cfg["leak_rate_precision"]),
         float(cfg["max_leak_rate"]),
+
     )
 
 
@@ -1046,7 +1065,30 @@ def pack_leak_test_recipe(cfg):
         cfg["observation"].encode("ascii", "ignore")[:24],
     )
 
+def pack_identity_field(cfg, field_name):
+    """Extracts arrays for indices and values, falling back to the last value if the array is short."""
+    # 1. Ensure log_index is always treated as a list
+    indices = cfg.get("log_index", [1])
+    if not isinstance(indices, list):
+        indices = [indices]
+        
+    # 2. Ensure the target field is always treated as a list
+    values = cfg.get(field_name, [""])
+    if not isinstance(values, list):
+        values = [values]
+        
+    payloads = []
+    for i, idx in enumerate(indices):
+        # Use the matched value, or fallback to the very last item [-1] if the array is too short
+        val = values[i] if i < len(values) else values[-1]
+        payloads.append(pack_indexed_string(idx, val, 16))
+        
+    return payloads
 
+#TODO: 
+# - adicionar o nome das unidades e modos de operação 
+# - permitir configurar o tag/técnico de cada log individualmente
+# - add install para windows
 def push_config(ser, cfg) -> bool:
     ok = True
 
@@ -1079,7 +1121,10 @@ def push_config(ser, cfg) -> bool:
             pack_log_technician(cfg["data_log_identity"]),
             "log technician",
         ),
-        (CommandNumber.WriteLogTag, pack_log_tag(cfg["data_log_identity"]), "log tag"),
+        (
+            CommandNumber.WriteLogTag,
+            pack_log_tag(cfg["data_log_identity"]),
+            "log tag"),
         (
             CommandNumber.WriteLeakTestSettings,
             pack_leak_test_settings(cfg["leak_test_settings"]),
@@ -1096,11 +1141,12 @@ def push_config(ser, cfg) -> bool:
             "leak tag",
         ),
     ]
-    for cmd, payload, label in steps:
-        if ser.send_write(cmd, payload):
-            log(f"Config: {label} applied", prefix="CONFIG")
-        else:
-            ok = False
+    for cmd, payloads, label in steps:
+        for payload in payloads:
+            if ser.send_write(cmd, payload):
+                log(f"Config: {label} applied", prefix="CONFIG")
+            else:
+                ok = False
     if ok:
         log("Config: all settings applied to device", prefix="CONFIG")
     return ok
