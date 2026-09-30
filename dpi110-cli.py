@@ -972,26 +972,28 @@ def load_config(path=CONFIG_PATH):
     merged = {**DEFAULT_CONFIG, **loaded}
     return loaded, merged  # `loaded` non-None = "file changed, push to device"
 
+
 def resolve_enum(enum_cls, val):
     """Safely resolves a string or int into the hardware's expected integer."""
     if isinstance(val, int):
         return val
-        
+
     if isinstance(val, str):
         # 1. Check if it matches the class attribute name exactly (e.g., "TripHigh")
         if val in enum_cls.__members__:
             return enum_cls[val].value
-            
+
         # 2. Check if it matches the custom symbol (e.g., "bar", "°C")
         for member in enum_cls:
-            if hasattr(member, 'symbol') and member.symbol == val:
+            if hasattr(member, "symbol") and member.symbol == val:
                 return member.value
-                
+
         # 3. Fallback: Try casting a string number ("1") to int
         if val.isdigit():
             return int(val)
-            
+
     raise ValueError(f"Invalid configuration value '{val}' for {enum_cls.__name__}")
+
 
 def pack_indexed_string(log_index, text, length):
     """1-byte index + fixed-length null-terminated string field."""
@@ -1002,18 +1004,20 @@ def pack_indexed_string(log_index, text, length):
 def pack_log_technician(cfg):
     return pack_identity_field(cfg, "technician")
 
+
 def pack_log_tag(cfg):
     return pack_identity_field(cfg, "tag")
 
+
 def pack_leak_test_log_technician(cfg):
     return pack_identity_field(cfg, "technician")
+
 
 def pack_leak_test_log_tag(cfg):
     return pack_identity_field(cfg, "tag")
 
 
 DATALOG_SETTINGS_FMT = "<3fi5B3x"
-
 
 
 def pack_logger_settings(cfg):
@@ -1043,7 +1047,6 @@ def pack_leak_test_settings(cfg):
         resolve_enum(TimeUnit, cfg["time_unit"]),
         resolve_enum(SensorAccuracyClass, cfg["leak_rate_precision"]),
         float(cfg["max_leak_rate"]),
-
     )
 
 
@@ -1065,28 +1068,30 @@ def pack_leak_test_recipe(cfg):
         cfg["observation"].encode("ascii", "ignore")[:24],
     )
 
+
 def pack_identity_field(cfg, field_name):
     """Extracts arrays for indices and values, falling back to the last value if the array is short."""
     # 1. Ensure log_index is always treated as a list
     indices = cfg.get("log_index", [1])
     if not isinstance(indices, list):
         indices = [indices]
-        
+
     # 2. Ensure the target field is always treated as a list
     values = cfg.get(field_name, [""])
     if not isinstance(values, list):
         values = [values]
-        
+
     payloads = []
     for i, idx in enumerate(indices):
         # Use the matched value, or fallback to the very last item [-1] if the array is too short
         val = values[i] if i < len(values) else values[-1]
         payloads.append(pack_indexed_string(idx, val, 16))
-        
+
     return payloads
 
-#TODO: 
-# - adicionar o nome das unidades e modos de operação 
+
+# TODO:
+# - adicionar o nome das unidades e modos de operação
 # - permitir configurar o tag/técnico de cada log individualmente
 # - add install para windows
 def push_config(ser, cfg) -> bool:
@@ -1113,7 +1118,7 @@ def push_config(ser, cfg) -> bool:
     steps = [
         (
             CommandNumber.WriteLoggerSettings,
-            pack_logger_settings(cfg["logger_settings"]),
+            [pack_logger_settings(cfg["logger_settings"])],
             "logger settings",
         ),
         (
@@ -1121,13 +1126,10 @@ def push_config(ser, cfg) -> bool:
             pack_log_technician(cfg["data_log_identity"]),
             "log technician",
         ),
-        (
-            CommandNumber.WriteLogTag,
-            pack_log_tag(cfg["data_log_identity"]),
-            "log tag"),
+        (CommandNumber.WriteLogTag, pack_log_tag(cfg["data_log_identity"]), "log tag"),
         (
             CommandNumber.WriteLeakTestSettings,
-            pack_leak_test_settings(cfg["leak_test_settings"]),
+            [pack_leak_test_settings(cfg["leak_test_settings"])],
             "leak settings",
         ),
         (
@@ -1763,8 +1765,16 @@ def handle_communication(ser, serial_number):
 
 def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text):
     """Executes a single command, reporting exact hardware error response codes."""
-    import serial
-
+    try:
+        import serial
+        import serial.tools.list_ports
+    except ImportError:
+        print("Error: Environment not ready (missing dependencies).", file=sys.stderr)
+        print(
+            "Please run this script using 'uv run' (e.g., uv run dpi110-cli.py ...) so it can automatically load the required packages.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     codec = COMMAND_REGISTRY.get(cmd_number, CommandCodec())
 
     try:
@@ -1776,13 +1786,14 @@ def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text)
         )
         sys.exit(1)
 
-    ports = (
-        [force_port]
-        if force_port
-        else glob.glob("/dev/ttyUSB*")
-        + glob.glob("/dev/ttyACM*")
-        + glob.glob("/dev/serial0")
-    )
+    ports = [p.device for p in serial.tools.list_ports.comports()]
+    # ports = (
+    #     [force_port]
+    #     if force_port
+    #     else glob.glob("/dev/ttyUSB*")
+    #     + glob.glob("/dev/ttyACM*")
+    #     + glob.glob("/dev/serial0")
+    # )
 
     # Reverse lookup map for human-readable error reporting
     rc_map = {v: k for k, v in vars(ResponseCode).items() if not k.startswith("_")}
@@ -1832,6 +1843,10 @@ def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text)
             pass
 
     print("Error: DPI110-IS not found or timed out.", file=sys.stderr)
+    print(
+        "Please verify that the USB cable is connected and the device is powered on.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -1949,25 +1964,73 @@ def uninstall_daemon():
 
 
 def _install_uv():
-    print("uv not found. Installing uv globally...")
-    env = os.environ.copy()
-    env["UV_INSTALL_DIR"] = "/usr/local/bin"
-    subprocess.run(
-        ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
-        env=env,
-        check=False,
-    )
+    print("uv not found. Installing uv...")
+    if os.name == "nt":
+        # Use pip on Windows to bypass PowerShell security policy errors
+        import sys
+
+        subprocess.run([sys.executable, "-m", "pip", "install", "uv"], check=False)
+    else:
+        # Unix installation globally
+        env = os.environ.copy()
+        env["UV_INSTALL_DIR"] = "/usr/local/bin"
+        subprocess.run(
+            ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
+            env=env,
+            check=False,
+        )
 
 
 def find_uv() -> str:
-    """Locate the uv binary, checking common install locations."""
+    """Locate the uv binary across OS platforms."""
     if path := shutil.which("uv"):
         return path
-    if os.path.exists("/usr/local/bin/uv"):
-        return "/usr/local/bin/uv"
-    if os.path.exists(os.path.expanduser("~/.local/bin/uv")):
-        return os.path.expanduser("~/.local/bin/uv")
+
+    if os.name == "nt":
+        import sys
+
+        # 1. Check Python's Scripts folder (if installed via pip)
+        pip_path = os.path.join(os.path.dirname(sys.executable), "Scripts", "uv.exe")
+        if os.path.exists(pip_path):
+            return pip_path
+
+        # 2. Check standard Windows fallback paths
+        win_path = os.path.expanduser("~\\.local\\bin\\uv.exe")
+        if os.path.exists(win_path):
+            return win_path
+        cargo_path = os.path.expanduser("~\\.cargo\\bin\\uv.exe")
+        if os.path.exists(cargo_path):
+            return cargo_path
+    else:
+        # Unix fallback paths
+        if os.path.exists("/usr/local/bin/uv"):
+            return "/usr/local/bin/uv"
+        if os.path.exists(os.path.expanduser("~/.local/bin/uv")):
+            return os.path.expanduser("~/.local/bin/uv")
+
     return ""
+
+
+# def _install_uv():
+#     print("uv not found. Installing uv globally...")
+#     env = os.environ.copy()
+#     env["UV_INSTALL_DIR"] = "/usr/local/bin"
+#     subprocess.run(
+#         ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
+#         env=env,
+#         check=False,
+#     )
+#
+#
+# def find_uv() -> str:
+#     """Locate the uv binary, checking common install locations."""
+#     if path := shutil.which("uv"):
+#         return path
+#     if os.path.exists("/usr/local/bin/uv"):
+#         return "/usr/local/bin/uv"
+#     if os.path.exists(os.path.expanduser("~/.local/bin/uv")):
+#         return os.path.expanduser("~/.local/bin/uv")
+#     return ""
 
 
 def systemd_available() -> bool:
@@ -2032,13 +2095,23 @@ def log(msg, prefix="INFO"):
 
 
 def run_daemon():
-    import serial
+    try:
+        import serial
+        import serial.tools.list_ports
+    except ImportError:
+        print("Error: Environment not ready (missing dependencies).", file=sys.stderr)
+        print(
+            "Please run this script using 'uv run' (e.g., uv run dpi110-cli.py ...) so it can automatically load the required packages.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     print("Daemon started. Polling for hardware...")
     db_connect()
 
     while True:
-        for port in glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"):
+        for port in [p.device for p in serial.tools.list_ports.comports()]:
+            # for port in glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"):
             try:
                 DpiPort = make_dpi_port(serial)
                 with DpiPort(port, 115200, timeout=5.0) as ser:
@@ -2180,24 +2253,38 @@ def main():
 
     # Handle system-level arguments
     if args.install:
-        if os.geteuid() != 0:
+        # Require sudo to interact with systemctl and /etc/systemd/
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
             print(
                 "Installation requires root. Please run: sudo python3",
                 sys.argv[0],
                 file=sys.stderr,
             )
             sys.exit(1)
+
         check_and_install_dependencies()
         init_db()
-        setup_systemd()
+
+        # Skip systemd installation on Windows
+        if os.name != "nt":
+            setup_systemd()
+        else:
+            print("Windows detected: Skipping systemd daemon installation.")
+
         sys.exit(0)
 
     if args.uninstall:
         # Require sudo to interact with systemctl and /etc/systemd/
-        if os.geteuid() != 0:
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
             print("Error: --uninstall requires root privileges. Run with sudo.")
             sys.exit(1)
-        uninstall_daemon()
+
+        # Skip systemd removal on Windows
+        if os.name != "nt":
+            uninstall_daemon()
+        else:
+            print("Windows detected: No systemd daemon to uninstall.")
+
         sys.exit(0)
 
     if args.daemon:
