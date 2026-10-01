@@ -1762,6 +1762,28 @@ def handle_communication(ser, serial_number):
 # 5. ENTRY POINT & BOOTSTRAP (UNIX CLI & DAEMON)
 # ==========================================
 
+def get_ports(default=[]) -> list:
+    try:
+        import serial.tools.list_ports
+    except ImportError:
+        print("Error: Environment not ready (missing dependencies).", file=sys.stderr)
+        print(
+            "Please run this script using 'uv run' (e.g., uv run dpi110-cli.py ...) so it can automatically load the required packages.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    
+    if default:
+        return [default]
+
+    ports = []
+
+    if os.name == "nt":
+        ports = [p.device for p in serial.tools.list_ports.comports()]
+    else:
+        ports = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*") + glob.glob("/dev/serial0")
+
+    return ports
 
 def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text):
     """Executes a single command, reporting exact hardware error response codes."""
@@ -1775,6 +1797,7 @@ def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text)
             file=sys.stderr,
         )
         sys.exit(1)
+
     codec = COMMAND_REGISTRY.get(cmd_number, CommandCodec())
 
     try:
@@ -1786,14 +1809,7 @@ def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text)
         )
         sys.exit(1)
 
-    ports = [p.device for p in serial.tools.list_ports.comports()]
-    # ports = (
-    #     [force_port]
-    #     if force_port
-    #     else glob.glob("/dev/ttyUSB*")
-    #     + glob.glob("/dev/ttyACM*")
-    #     + glob.glob("/dev/serial0")
-    # )
+    ports = get_ports(default=force_port)
 
     # Reverse lookup map for human-readable error reporting
     rc_map = {v: k for k, v in vars(ResponseCode).items() if not k.startswith("_")}
@@ -1801,7 +1817,7 @@ def execute_cli_command(cmd_number, payload_args, force_port, out_raw, out_text)
     for port in ports:
         try:
             DpiPort = make_dpi_port(serial)
-            with DpiPort(port, 115200, timeout=2.0) as ser:
+            with DpiPort(port, 115200, timeout=0.5) as ser:
                 ser.query(CommandNumber.ReadDeviceInfo)
                 # with serial.Serial(port, 115200, timeout=2.0) as ser:
                 print(f"Probing {port}...", file=sys.stderr)
