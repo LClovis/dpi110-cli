@@ -36,7 +36,7 @@ mkdir -p ~/dpi110-cli && curl -sL https://github.com/LClovis/dpi110-cli/archive/
 #### 1.2 Windows 10 64-bit or later
 ##### In PowerShell
 ```bash
-mkdir -Force $HOME\dpi110-cli; curl.exe -fL "https://github.com/LClovis/dpi110-cli/archive/main.tar.gz" -o $HOME\dpi110-cli\m.tgz; tar.exe -xzf $HOME\dpi110-cli\m.tgz -C $HOME\dpi110-cli --strip-components=1; Remove-Item $HOME\dpi110-cli\m.tgz; cd $HOME\dpi110-cli
+mkdir -Force $HOME\dpi110-cli; curl.exe -fL "https://github.com/LClovis/dpi110-cli/archive/main.tar.gz" -o $HOME\dpi110-cli\m.tgz; tar.exe -xzf $HOME\dpi110-cli\m.tgz -C $HOME\dpi110-cli --strip-components=1; Remove-Item $HOME\dpi110-cli\m.tgz; cd $HOME\dpi110-cli; python dpi110-cli.py --install;
 ```
 
 ### 2. Background Daemon (`--daemon`)
